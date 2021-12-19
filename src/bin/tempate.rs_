@@ -1,0 +1,6 @@
+use aoc21::*;
+
+fn main() -> DynResult<()> {
+    let input = read_input!()?;
+    Ok(())
+}
