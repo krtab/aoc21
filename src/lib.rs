@@ -18,3 +18,7 @@ macro_rules! read_input {
         buf.lines().map(|l| l.parse().unwrap()).collect()
     }};
 }
+
+pub fn print_answer<T: std::fmt::Display>(n: u8, x: T) {
+    println!("Answer {}:\n{}", n, x);
+}
