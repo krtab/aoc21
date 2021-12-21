@@ -45,13 +45,13 @@ fn main() -> DynResult<()> {
                 ']' => 2,
                 '}' => 3,
                 '>' => 4,
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         }
         complete_scores.push(line_score);
     }
     print_answer(1, res1);
     complete_scores.sort_unstable();
-    print_answer(2, complete_scores[complete_scores.len()/2]);
+    print_answer(2, complete_scores[complete_scores.len() / 2]);
     Ok(())
 }

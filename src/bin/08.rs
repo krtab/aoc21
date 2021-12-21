@@ -24,7 +24,7 @@ impl Subst {
         assert!(c <= b'g');
         (c - b'a') as usize
     }
-    
+
     fn get(&self, c: u8) -> u8 {
         self.0[Self::index(c)]
     }
