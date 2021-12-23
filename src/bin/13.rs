@@ -11,8 +11,8 @@ use Fold::*;
 
 fn symmetry(x: u16, axis: u16) -> u16 {
     if x > axis {
-    let delta = x - axis;
-    axis - delta
+        let delta = x - axis;
+        axis - delta
     } else {
         x
     }
@@ -49,20 +49,20 @@ fn main() -> DynResult<()> {
     }
     let first_fold = &folds[0];
     let remainig_folds = &folds[1..];
-    let mut grid1 = [[false;2000];2000];
-    let mut grid2 = [[false;2000];2000];
+    let mut grid1 = [[false; 2000]; 2000];
+    let mut grid2 = [[false; 2000]; 2000];
     let mut max_x = 0;
     let mut max_y = 0;
     for l in coords.lines() {
-        let (x,y) = l.split_once(',').unwrap();
+        let (x, y) = l.split_once(',').unwrap();
         let x = x.parse().unwrap();
         let y = y.parse().unwrap();
-        let (x,y) = first_fold.fold((x,y));
+        let (x, y) = first_fold.fold((x, y));
         grid1[y as usize][x as usize] = true;
-        let (x,y) = remainig_folds.iter().fold((x,y), |c,f| f.fold(c));
+        let (x, y) = remainig_folds.iter().fold((x, y), |c, f| f.fold(c));
         grid2[y as usize][x as usize] = true;
-        max_x = std::cmp::max(x,max_x);
-        max_y = std::cmp::max(y,max_y);
+        max_x = std::cmp::max(x, max_x);
+        max_y = std::cmp::max(y, max_y);
     }
     let res1 = grid1.iter().flatten().filter(|&&b| b).count();
     print_answer(1, res1);
@@ -73,8 +73,9 @@ fn main() -> DynResult<()> {
         for &c in &r[..=max_x as usize] {
             lock.write_all(match c {
                 true => "█".as_bytes(),
-                false => "░".as_bytes()
-            }).unwrap();
+                false => "░".as_bytes(),
+            })
+            .unwrap();
         }
         lock.write_all(b"\n").unwrap();
     }

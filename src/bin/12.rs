@@ -32,7 +32,7 @@ impl Cave {
 #[derive(Clone)]
 struct Path {
     head: Cave,
-    smalls_in_path: ArrayVec<[u8; 2],6>,
+    smalls_in_path: ArrayVec<[u8; 2], 6>,
     visited_small_twice: bool,
 }
 
@@ -56,7 +56,7 @@ fn main() -> DynResult<()> {
         graph.entry(a).or_default().push(b);
         graph.entry(b).or_default().push(a);
     }
-    dbg!(graph.keys().filter(|c| matches!(c,Cave::Small(_))).count());
+    dbg!(graph.keys().filter(|c| matches!(c, Cave::Small(_))).count());
     let mut res1 = 0_u64;
     let mut res2 = 0_u64;
     let mut stack = vec![Path::new()];

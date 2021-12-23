@@ -1,22 +1,22 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use aoc21::*;
 
-fn compute_res_from_pair_counts(pairs_count: &HashMap<(u8,u8),u64>, init: &str) -> u64 {
+fn compute_res_from_pair_counts(pairs_count: &HashMap<(u8, u8), u64>, init: &str) -> u64 {
     let mut final_counts = HashMap::new();
     for (&(pl, pr), &c) in pairs_count {
         for elem in [pl, pr] {
             *final_counts.entry(elem).or_insert(0) += c
         }
     }
-    for (elem,c) in &mut final_counts {
+    for (elem, c) in &mut final_counts {
         if *elem == init.bytes().next().unwrap() || *elem == init.bytes().last().unwrap() {
-            *c+=1;
+            *c += 1;
         }
-        *c/=2;
+        *c /= 2;
     }
-    let (_,count_max) = final_counts.iter().max_by_key(|(_,&c)| c).unwrap();
-    let (_,count_min) = final_counts.iter().min_by_key(|(_,&c)| c).unwrap();
+    let (_, count_max) = final_counts.iter().max_by_key(|(_, &c)| c).unwrap();
+    let (_, count_min) = final_counts.iter().min_by_key(|(_, &c)| c).unwrap();
     count_max - count_min
 }
 
