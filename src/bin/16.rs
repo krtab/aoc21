@@ -2,68 +2,52 @@ use std::fmt::Write;
 
 use aoc21::*;
 
-struct CountingIter<T> {
-    inner: T,
-    reads: usize,
+
+struct BitIter<'a> {
+    current: u8,
+    from_ascii_str: &'a [u8]
 }
 
-impl<T: Iterator> Iterator for CountingIter<T> {
-    type Item = T::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.inner.next();
-        if next.is_some() {
-            self.reads += 1;
-        }
-        next
-    }
-}
-
-impl<T> CountingIter<T> {
-    fn new(it: T) -> Self {
-        Self {
-            inner: it,
-            reads: 0,
-        }
-    }
-
-    /// Get a reference to the counting iter's reads.
-    fn reads(&self) -> usize {
-        self.reads
-    }
-}
-
-struct BitIter {
-    inner: u8,
-    yielded: u8,
-}
-
-impl Iterator for BitIter {
+impl<'a> Iterator for BitIter<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.yielded == 4 {
-            return None;
+        if self.current == 0x0F {
+            let (&next_byte, rest) = self.from_ascii_str.split_first()?;
+            self.from_ascii_str = rest;
+            let x = match next_byte {
+                b'0'..=b'9' => next_byte - b'0',
+                b'A'..=b'F' => next_byte - b'A' + 10,
+                _ => panic!("Unexpected character: {}",next_byte as char)
+            };
+            self.current = x.reverse_bits() >> 4 | 0xF0;
         }
-        self.yielded += 1;
-        let res = self.inner & 1;
-        self.inner >>= 1;
+        let res = self.current & 1;
+        self.current >>= 1;
         Some(res)
     }
 }
 
-impl BitIter {
-    fn new(x: char) -> Self {
-        let x = x.to_digit(16).unwrap() as u8;
-        Self { inner: x.reverse_bits() >> 4, yielded: 0 }
+impl<'a> BitIter<'a> {
+    fn new(s: &'a [u8]) -> Self {
+        Self {
+            from_ascii_str: s,
+            current: 0x0F
+        }
+    }
+
+    fn remaining_bits(&self) -> usize {
+        let in_cur = (self.current >> 4).count_ones();
+        self.from_ascii_str.len() + (in_cur as usize)
     }
 }
 
 fn parse_base2_number(bits: &mut impl Iterator<Item = u8>, n: usize) -> u64 {
-    let (count, res) = bits
-        .take(n)
-        .fold((0, 0), |(count, acc), x| (count + 1, acc * 2 + (x as u64)));
-    assert_eq!(count, n);
+    let mut res = 0;
+    for _ in 0..n {
+        let b = bits.next().unwrap();
+        res = res*2+(b as u64);
+    }
     res
 }
 
@@ -93,9 +77,7 @@ trait Visitor {
     fn end_operator(&mut self);
     fn finish(self) -> Self::Return;
 
-    fn parse_packet_inner<T>(&mut self, bits: &mut CountingIter<T>)
-    where
-        T: Iterator<Item = u8>,
+    fn parse_packet(&mut self, bits: &mut BitIter)
     {
         let (version, type_id) = parse_header(bits);
         if type_id == 4 {
@@ -108,27 +90,20 @@ trait Visitor {
             if length_type_id == 0 {
                 let total_length = parse_base2_number(bits, 15) as usize;
                 // dbg!(total_length);
-                let starting_reads = bits.reads();
-                while bits.reads() - starting_reads < total_length {
-                    self.parse_packet_inner(bits)
+                let rem_bits = bits.remaining_bits();
+                let stop_at = rem_bits - total_length;
+                while bits.remaining_bits() > stop_at {
+                    self.parse_packet(bits)
                 }
             } else {
                 let n_packets = parse_base2_number(bits, 11);
                 // dbg!(n_packets);
                 for _ in 0..n_packets {
-                    self.parse_packet_inner(bits);
+                    self.parse_packet(bits);
                 }
             }
             self.end_operator();
         }
-    }
-
-    fn parse_packet<T>(&mut self, bits: T)
-    where
-        T: Iterator<Item = u8>,
-    {
-        let mut cnt_it = CountingIter::new(bits);
-        self.parse_packet_inner(&mut cnt_it)
     }
 }
 
@@ -356,11 +331,11 @@ impl<V1: Visitor, V2: Visitor> Visitor for (V1, V2) {
 
 fn main() -> DynResult<()> {
     let input = read_input!();
-    eprintln!("Parsing: {}", &input);
-    let bits = input.chars().map(BitIter::new).flatten();
+    // eprintln!("Parsing: {}", &input);
+    let mut bits = BitIter::new(input.as_bytes());
 
-    let mut vis = DebugVisitor::new((Visitor1::new(), Visitor2::new()));
-    vis.parse_packet(bits);
+    let mut vis = (Visitor1::new(), Visitor2::new());
+    vis.parse_packet(&mut bits);
     let (res1, res2) = vis.finish();
 
     print_answer(1, res1);

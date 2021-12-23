@@ -10,3 +10,7 @@ ahash = "0.7.6"
 arrayvec = "0.7.2"
 
 [features]
+
+[profile.perf]
+inherits = "release"
+debug = true
