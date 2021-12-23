@@ -1,11 +1,8 @@
-use std::fmt::Write;
-
 use aoc21::*;
-
 
 struct BitIter<'a> {
     current: u8,
-    from_ascii_str: &'a [u8]
+    from_ascii_str: &'a [u8],
 }
 
 impl<'a> Iterator for BitIter<'a> {
@@ -18,7 +15,7 @@ impl<'a> Iterator for BitIter<'a> {
             let x = match next_byte {
                 b'0'..=b'9' => next_byte - b'0',
                 b'A'..=b'F' => next_byte - b'A' + 10,
-                _ => panic!("Unexpected byte: \\{:x}",next_byte)
+                _ => panic!("Unexpected byte: \\{:x}", next_byte),
             };
             self.current = x.reverse_bits() >> 4 | 0xF0;
         }
@@ -32,13 +29,13 @@ impl<'a> BitIter<'a> {
     fn new(s: &'a [u8]) -> Self {
         Self {
             from_ascii_str: s,
-            current: 0x0F
+            current: 0x0F,
         }
     }
 
     fn remaining_bits(&self) -> usize {
         let in_cur = (self.current >> 4).count_ones();
-        self.from_ascii_str.len()*4 + (in_cur as usize)
+        self.from_ascii_str.len() * 4 + (in_cur as usize)
     }
 }
 
@@ -46,7 +43,7 @@ fn parse_base2_number(bits: &mut impl Iterator<Item = u8>, n: usize) -> u64 {
     let mut res = 0;
     for _ in 0..n {
         let b = bits.next().unwrap();
-        res = res*2+(b as u64);
+        res = res * 2 + (b as u64);
     }
     res
 }
@@ -60,10 +57,10 @@ fn parse_header(bits: &mut impl Iterator<Item = u8>) -> (u8, u8) {
 fn parse_literal(bits: &mut impl Iterator<Item = u8>) -> u64 {
     let mut res = 0;
     loop {
-        let last_group = bits.next().unwrap();
+        let not_last_group = bits.next().unwrap();
         let tmp = parse_base2_number(bits, 4);
         res = res * 16 + tmp;
-        if last_group == 0 {
+        if not_last_group == 0 {
             break;
         }
     }
@@ -77,8 +74,7 @@ trait Visitor {
     fn end_operator(&mut self);
     fn finish(self) -> Self::Return;
 
-    fn parse_packet(&mut self, bits: &mut BitIter)
-    {
+    fn parse_packet(&mut self, bits: &mut BitIter) {
         let (version, type_id) = parse_header(bits);
         if type_id == 4 {
             let v = parse_literal(bits);
@@ -232,78 +228,54 @@ impl Visitor for Visitor2 {
     }
 }
 
-struct DebugVisitor<V> {
+struct TreeWriterVisitor<T> {
     level: u8,
-    inner: V,
-    last: Option<String>,
+    writter: T,
 }
 
-impl<V> DebugVisitor<V> {
-    fn new(vis: V) -> Self {
+impl<T> TreeWriterVisitor<T> {
+    fn new(writer: T) -> Self {
         Self {
             level: 0,
-            inner: vis,
-            last: None,
-        }
-    }
-
-    fn print_last(&mut self) {
-        if let Some(last) = self.last.take() {
-            eprintln!("{}", last)
-        }
-    }
-
-    fn put_last(&mut self, s: String) {
-        if let Some(last) = self.last.replace(s) {
-            eprintln!("{}", last)
+            writter: writer,
         }
     }
 }
 
-fn level_string(level: u8) -> String {
-    let mut s = String::new();
+fn level_indent<W: std::io::Write>(w: &mut W, level: u8) -> std::io::Result<()> {
     for _ in 0..level.saturating_sub(1) {
-        s.write_str("│  ").unwrap();
+        write!(w, "🭰 ")?;
     }
     if level > 0 {
-        s.write_str("├─ ").unwrap();
+        write!(w, "🭼 ")?;
     }
-    s
+    Ok(())
 }
 
-impl<V: Visitor> Visitor for DebugVisitor<V> {
-    type Return = V::Return;
+impl<T: std::io::Write> Visitor for TreeWriterVisitor<T> {
+    type Return = ();
 
     fn literal(&mut self, v: u64, version: u8) {
-        let mut s = level_string(self.level);
-        s.write_fmt(format_args!("Literal: {} (version: {})", v, version))
-            .unwrap();
-        self.put_last(s);
-        self.inner.literal(v, version)
+        level_indent(&mut self.writter, self.level).unwrap();
+        writeln!(&mut self.writter, "Literal: {} (version: {})", v, version).unwrap();
     }
 
     fn start_operator(&mut self, version: u8, type_id: u8) {
-        let mut s = level_string(self.level);
-        s.write_fmt(format_args!(
+        level_indent(&mut self.writter, self.level).unwrap();
+        writeln!(
+            &mut self.writter,
             "Operator: version={}, id={}",
             version, type_id
-        ))
+        )
         .unwrap();
-        self.put_last(s);
         self.level += 1;
-        self.inner.start_operator(version, type_id);
     }
 
     fn end_operator(&mut self) {
         self.level -= 1;
-        self.last = self.last.as_ref().map(|s| s.replace('├', "└"));
-        self.inner.end_operator();
     }
 
-    fn finish(mut self) -> Self::Return {
-        self.print_last();
-        self.inner.finish()
-    }
+    fn finish(self) -> Self::Return {}
 }
 
 impl<V1: Visitor, V2: Visitor> Visitor for (V1, V2) {
@@ -329,14 +301,30 @@ impl<V1: Visitor, V2: Visitor> Visitor for (V1, V2) {
     }
 }
 
+struct NoOpVis {}
+
+impl Visitor for NoOpVis {
+    type Return = ();
+
+    fn literal(&mut self, _v: u64, _version: u8) {}
+
+    fn start_operator(&mut self, _version: u8, _type_id: u8) {}
+
+    fn end_operator(&mut self) {}
+
+    fn finish(self) -> Self::Return {}
+}
+
 fn main() -> DynResult<()> {
     let input = read_input!();
-    // eprintln!("Parsing: {}", &input);
     let mut bits = BitIter::new(input.as_bytes());
 
-    let mut vis = DebugVisitor::new((Visitor1::new(), Visitor2::new()));
+    // let vis0 = DebugVisitor::new(std::io::stderr());
+    let vis0 = NoOpVis {};
+
+    let mut vis = (vis0, (Visitor1::new(), Visitor2::new()));
     vis.parse_packet(&mut bits);
-    let (res1, res2) = vis.finish();
+    let ((), (res1, res2)) = vis.finish();
 
     print_answer(1, res1);
     print_answer(2, res2);
