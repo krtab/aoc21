@@ -18,7 +18,7 @@ impl<'a> Iterator for BitIter<'a> {
             let x = match next_byte {
                 b'0'..=b'9' => next_byte - b'0',
                 b'A'..=b'F' => next_byte - b'A' + 10,
-                _ => panic!("Unexpected character: {}",next_byte as char)
+                _ => panic!("Unexpected byte: \\{:x}",next_byte)
             };
             self.current = x.reverse_bits() >> 4 | 0xF0;
         }
@@ -38,7 +38,7 @@ impl<'a> BitIter<'a> {
 
     fn remaining_bits(&self) -> usize {
         let in_cur = (self.current >> 4).count_ones();
-        self.from_ascii_str.len() + (in_cur as usize)
+        self.from_ascii_str.len()*4 + (in_cur as usize)
     }
 }
 
@@ -334,7 +334,7 @@ fn main() -> DynResult<()> {
     // eprintln!("Parsing: {}", &input);
     let mut bits = BitIter::new(input.as_bytes());
 
-    let mut vis = (Visitor1::new(), Visitor2::new());
+    let mut vis = DebugVisitor::new((Visitor1::new(), Visitor2::new()));
     vis.parse_packet(&mut bits);
     let (res1, res2) = vis.finish();
 
