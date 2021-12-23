@@ -34,7 +34,7 @@ impl<T> CountingIter<T> {
 }
 
 struct BitIter {
-    inner: [u8; 4],
+    inner: u8,
     yielded: u8,
 }
 
@@ -46,8 +46,8 @@ impl Iterator for BitIter {
             return None;
         }
         self.yielded += 1;
-        let res = self.inner[0];
-        self.inner.rotate_left(1);
+        let res = self.inner & 1;
+        self.inner >>= 1;
         Some(res)
     }
 }
@@ -55,8 +55,7 @@ impl Iterator for BitIter {
 impl BitIter {
     fn new(x: char) -> Self {
         let x = x.to_digit(16).unwrap() as u8;
-        let inner = [(x >> 3) & 1, (x >> 2) & 1, (x >> 1) & 1, (x >> 0) & 1];
-        Self { inner, yielded: 0 }
+        Self { inner: x.reverse_bits() >> 4, yielded: 0 }
     }
 }
 
@@ -71,7 +70,7 @@ fn parse_base2_number(bits: &mut impl Iterator<Item = u8>, n: usize) -> u64 {
 fn parse_header(bits: &mut impl Iterator<Item = u8>) -> (u8, u8) {
     let version = parse_base2_number(bits, 3);
     let type_id = parse_base2_number(bits, 3);
-    return (version as u8, type_id as u8);
+    (version as u8, type_id as u8)
 }
 
 fn parse_literal(bits: &mut impl Iterator<Item = u8>) -> u64 {
@@ -88,9 +87,11 @@ fn parse_literal(bits: &mut impl Iterator<Item = u8>) -> u64 {
 }
 
 trait Visitor {
+    type Return;
     fn literal(&mut self, v: u64, version: u8);
     fn start_operator(&mut self, version: u8, type_id: u8);
-    fn finish_operator(&mut self);
+    fn end_operator(&mut self);
+    fn finish(self) -> Self::Return;
 
     fn parse_packet_inner<T>(&mut self, bits: &mut CountingIter<T>)
     where
@@ -118,7 +119,7 @@ trait Visitor {
                     self.parse_packet_inner(bits);
                 }
             }
-            self.finish_operator();
+            self.end_operator();
         }
     }
 
@@ -142,6 +143,8 @@ impl Visitor1 {
 }
 
 impl Visitor for Visitor1 {
+    type Return = u64;
+
     fn literal(&mut self, _v: u64, version: u8) {
         self.acc += version as u64;
     }
@@ -150,8 +153,107 @@ impl Visitor for Visitor1 {
         self.acc += version as u64;
     }
 
-    fn finish_operator(&mut self) {
-        ()
+    fn end_operator(&mut self) {}
+
+    fn finish(self) -> Self::Return {
+        self.acc
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+#[repr(u8)]
+enum Operation {
+    #[allow(dead_code)]
+    Sum = 0,
+    #[allow(dead_code)]
+    Product = 1,
+    #[allow(dead_code)]
+    Minimum = 2,
+    #[allow(dead_code)]
+    Maximum = 3,
+    #[allow(dead_code)]
+    GreaterThan = 5,
+    #[allow(dead_code)]
+    LessThan = 6,
+    #[allow(dead_code)]
+    Equal = 7,
+    Root,
+}
+
+impl Operation {
+    fn new(op: u8) -> Self {
+        assert!(op <= 7);
+        assert_ne!(op, 4);
+        unsafe { std::mem::transmute(op) }
+    }
+}
+
+struct Visitor2 {
+    stack: Vec<(Operation, Vec<u64>)>,
+}
+
+impl Visitor2 {
+    fn new() -> Self {
+        Self {
+            stack: vec![(Operation::Root, vec![])],
+        }
+    }
+}
+
+impl Visitor for Visitor2 {
+    type Return = u64;
+
+    fn literal(&mut self, v: u64, _version: u8) {
+        self.stack.last_mut().unwrap().1.push(v)
+    }
+
+    fn start_operator(&mut self, _version: u8, type_id: u8) {
+        self.stack.push((Operation::new(type_id), vec![]))
+    }
+
+    fn end_operator(&mut self) {
+        let (op, v) = self.stack.pop().unwrap();
+
+        let res = match op {
+            Operation::Sum => v.into_iter().sum(),
+            Operation::Product => v.into_iter().product(),
+            Operation::Minimum => v.into_iter().min().unwrap(),
+            Operation::Maximum => v.into_iter().max().unwrap(),
+            Operation::GreaterThan => {
+                assert!(v.len() == 2);
+                if v[0] > v[1] {
+                    1
+                } else {
+                    0
+                }
+            }
+            Operation::LessThan => {
+                assert!(v.len() == 2);
+                if v[0] < v[1] {
+                    1
+                } else {
+                    0
+                }
+            }
+            Operation::Equal => {
+                assert!(v.len() == 2);
+                if v[0] == v[1] {
+                    1
+                } else {
+                    0
+                }
+            }
+            Operation::Root => unreachable!(),
+        };
+        self.stack.last_mut().unwrap().1.push(res);
+    }
+
+    fn finish(mut self) -> Self::Return {
+        assert!(self.stack.len() == 1);
+        let (op, v) = self.stack.pop().unwrap();
+        assert_eq!(op, Operation::Root);
+        assert!(v.len() == 1);
+        v[0]
     }
 }
 
@@ -161,12 +263,6 @@ struct DebugVisitor<V> {
     last: Option<String>,
 }
 
-impl<V> Drop for DebugVisitor<V> {
-    fn drop(&mut self) {
-        self.print_last()
-    }
-}
-
 impl<V> DebugVisitor<V> {
     fn new(vis: V) -> Self {
         Self {
@@ -174,10 +270,6 @@ impl<V> DebugVisitor<V> {
             inner: vis,
             last: None,
         }
-    }
-
-    fn inner(&self) -> &V {
-        &self.inner
     }
 
     fn print_last(&mut self) {
@@ -205,6 +297,8 @@ fn level_string(level: u8) -> String {
 }
 
 impl<V: Visitor> Visitor for DebugVisitor<V> {
+    type Return = V::Return;
+
     fn literal(&mut self, v: u64, version: u8) {
         let mut s = level_string(self.level);
         s.write_fmt(format_args!("Literal: {} (version: {})", v, version))
@@ -217,8 +311,7 @@ impl<V: Visitor> Visitor for DebugVisitor<V> {
         let mut s = level_string(self.level);
         s.write_fmt(format_args!(
             "Operator: version={}, id={}",
-            version,
-            type_id
+            version, type_id
         ))
         .unwrap();
         self.put_last(s);
@@ -226,22 +319,51 @@ impl<V: Visitor> Visitor for DebugVisitor<V> {
         self.inner.start_operator(version, type_id);
     }
 
-    fn finish_operator(&mut self) {
+    fn end_operator(&mut self) {
         self.level -= 1;
-        self.last = self.last.as_ref().map(|s| s.replace('├',"└"));
-        self.inner.finish_operator();
+        self.last = self.last.as_ref().map(|s| s.replace('├', "└"));
+        self.inner.end_operator();
+    }
+
+    fn finish(mut self) -> Self::Return {
+        self.print_last();
+        self.inner.finish()
+    }
+}
+
+impl<V1: Visitor, V2: Visitor> Visitor for (V1, V2) {
+    type Return = (V1::Return, V2::Return);
+
+    fn literal(&mut self, v: u64, version: u8) {
+        self.0.literal(v, version);
+        self.1.literal(v, version);
+    }
+
+    fn start_operator(&mut self, version: u8, type_id: u8) {
+        self.0.start_operator(version, type_id);
+        self.1.start_operator(version, type_id);
+    }
+
+    fn end_operator(&mut self) {
+        self.0.end_operator();
+        self.1.end_operator();
+    }
+
+    fn finish(self) -> Self::Return {
+        (self.0.finish(), self.1.finish())
     }
 }
 
 fn main() -> DynResult<()> {
     let input = read_input!();
     eprintln!("Parsing: {}", &input);
-    let bits = input.chars().map(|c| BitIter::new(c)).flatten();
-    let res1 = {
-        let mut vis = DebugVisitor::new(Visitor1::new());
-        vis.parse_packet(bits);
-        vis.inner().acc
-    };
+    let bits = input.chars().map(BitIter::new).flatten();
+
+    let mut vis = DebugVisitor::new((Visitor1::new(), Visitor2::new()));
+    vis.parse_packet(bits);
+    let (res1, res2) = vis.finish();
+
     print_answer(1, res1);
+    print_answer(2, res2);
     Ok(())
 }
